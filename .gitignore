@@ -1,0 +1,11 @@
+bin
+obj
+*.suo
+*.user
+*.nupkg
+.vs/
+/packages/
+/artifacts/
+.emsdk/
+PublishProfiles/
+node_modules/

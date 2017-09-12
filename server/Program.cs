@@ -20,7 +20,7 @@ namespace server
 
             if (onWindowsServer)
             {
-                host.UseWebListener();
+                host.UseHttpSys();
             }
             else
             {

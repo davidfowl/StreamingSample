@@ -12,6 +12,32 @@ namespace client
         static void Main(string[] args)
         {
             Stream().Wait();
+            // StreamWithHttpClient().Wait();
+        }
+
+        static async Task StreamWithHttpClient()
+        {
+            using (var client = new HttpClient())
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, new Uri("http://localhost:5000/api/streaming"));
+                request.Headers.TransferEncodingChunked = true;
+                request.Content = new PostStreamContent(GenerateNumbersNoManualChunking);
+                var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                using (var stream = await response.Content.ReadAsStreamAsync())
+                {
+                    // Send the request
+                    var sr = new StreamReader(stream);
+
+                    // Consume the headers and response body
+                    await ConsumeResponseLineAndHeadersAsync(sr);
+
+                    var receiveTask = Receive(stream);
+
+                    await receiveTask;
+                }
+            }
         }
 
         static async Task Stream()
@@ -86,6 +112,19 @@ namespace client
             await sw.WriteAsync("\r\n");
             await sw.WriteAsync("\r\n");
             await sw.FlushAsync();
+        }
+
+        static async Task GenerateNumbersNoManualChunking(Stream stream)
+        {
+            var sw = new StreamWriter(stream);
+
+            for (int i = 0; i < 10; i++)
+            {
+                Console.WriteLine($"sending '{i}'");
+                await sw.WriteLineAsync(i.ToString());
+                await sw.FlushAsync();
+                await Task.Delay(500);
+            }
         }
     }
 }

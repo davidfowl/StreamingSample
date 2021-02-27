@@ -1,43 +1,34 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Core.Features;
 
 namespace server
 {
     public class Startup
     {
-        public Startup(IHostingEnvironment env)
-        {
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(env.ContentRootPath)
-                .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true)
-                .AddEnvironmentVariables();
-            Configuration = builder.Build();
-        }
-
-        public IConfigurationRoot Configuration { get; }
-
-        // This method gets called by the runtime. Use this method to add services to the container.
-        public void ConfigureServices(IServiceCollection services)
-        {
-            // Add framework services.
-            services.AddMvc();
-        }
-
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
+        public void Configure(IApplicationBuilder app)
         {
-            loggerFactory.AddConsole(Configuration.GetSection("Logging"));
-            loggerFactory.AddDebug();
+            app.UseRouting();
 
-            app.UseMvc();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapGet("/", context => context.Response.WriteAsync("Hello World"));
+
+                endpoints.MapPost("/api/streaming", async context =>
+                {
+                    // We're streaming here so there's no max body size nor is there a min data rate
+                    context.Features.Get<IHttpMaxRequestBodySizeFeature>().MaxRequestBodySize = null;
+                    context.Features.Get<IHttpMinRequestBodyDataRateFeature>().MinDataRate = null;
+
+                    // Flush the headers so that the client can start sending
+                    await context.Response.Body.FlushAsync();
+
+                    // Echo stream
+                    await context.Request.Body.CopyToAsync(context.Response.Body);
+                });
+            });
         }
     }
 }

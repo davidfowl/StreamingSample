@@ -1,128 +1,61 @@
 ﻿using System;
 using System.IO;
-using System.Net;
 using System.Net.Http;
-using System.Net.Sockets;
 using System.Threading.Tasks;
 
 namespace client
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            Stream().Wait();
-            // StreamWithHttpClient().Wait();
+            await StreamWithHttpClient();
         }
 
         static async Task StreamWithHttpClient()
         {
-            using (var client = new HttpClient())
-            {
-                var request = new HttpRequestMessage(HttpMethod.Post, new Uri("http://localhost:5000/api/streaming"));
-                request.Headers.TransferEncodingChunked = true;
-                request.Content = new PostStreamContent(GenerateNumbersNoManualChunking);
-                var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-                response.EnsureSuccessStatusCode();
+            using var client = new HttpClient();
 
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                {
-                    // Send the request
-                    var sr = new StreamReader(stream);
+            var request = new HttpRequestMessage(HttpMethod.Post, new Uri("https://localhost:5001/api/streaming"));
+            request.Version = new Version(2, 0);
+            request.Headers.TransferEncodingChunked = true;
+            request.Content = new PostStreamContent(GenerateNumbersNoManualChunking);
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
 
-                    // Consume the headers and response body
-                    await ConsumeResponseLineAndHeadersAsync(sr);
+            using var stream = await response.Content.ReadAsStreamAsync();
+            // Send the request
+            var sr = new StreamReader(stream);
 
-                    var receiveTask = Receive(stream);
-
-                    await receiveTask;
-                }
-            }
+            // Consume the headers and response body
+            await Receive(sr);
         }
 
-        static async Task Stream()
+        private static async Task Receive(StreamReader sr)
         {
-            var client = new TcpClient();
-            await client.ConnectAsync(IPAddress.Loopback, 5000);
-
-            using (var stream = client.GetStream())
-            {
-                // Send the request
-                var sw = new StreamWriter(stream);
-                var sr = new StreamReader(stream);
-
-                await sw.WriteAsync($"POST /api/streaming HTTP/1.1\r\n");
-                await sw.WriteAsync("Transfer-Encoding: chunked\r\n");
-                await sw.WriteAsync("Host: localhost: 5000\r\n");
-                await sw.WriteAsync("\r\n");
-                await sw.FlushAsync();
-
-                var sendTask = GenerateNumbers(stream);
-
-                // Consume the headers and response body
-                await ConsumeResponseLineAndHeadersAsync(sr);
-
-                var receiveTask = Receive(stream);
-
-                await Task.WhenAll(sendTask, receiveTask);
-            }
-        }
-
-        private static async Task ConsumeResponseLineAndHeadersAsync(StreamReader sr)
-        {
-            var responseLine = await sr.ReadLineAsync();
             while (true)
             {
-                var header = await sr.ReadLineAsync();
-                if (string.IsNullOrEmpty(header))
+                var line = await sr.ReadLineAsync();
+                if (string.IsNullOrEmpty(line))
                 {
                     break;
                 }
+                Console.WriteLine("received: " + line);
             }
-        }
-
-        static async Task Receive(Stream stream)
-        {
-            var sr = new StreamReader(stream);
-
-            while (!sr.EndOfStream)
-            {
-                Console.WriteLine("received: " + await sr.ReadLineAsync());
-            }
-        }
-
-        static async Task GenerateNumbers(Stream stream)
-        {
-            var sw = new StreamWriter(stream);
-
-            for (int i = 0; i < 10; i++)
-            {
-                Console.WriteLine($"sending '{i}'");
-                var hexLength = (sw.Encoding.GetByteCount(i.ToString()) + 2).ToString("x");
-                await sw.WriteAsync(hexLength);
-                await sw.WriteAsync("\r\n");
-                await sw.WriteAsync(i.ToString());
-                await sw.WriteAsync("\r\n");
-                await sw.WriteAsync("\r\n");
-                await sw.FlushAsync();
-                await Task.Delay(500);
-            }
-
-            await sw.WriteAsync("0");
-            await sw.WriteAsync("\r\n");
-            await sw.WriteAsync("\r\n");
-            await sw.FlushAsync();
         }
 
         static async Task GenerateNumbersNoManualChunking(Stream stream)
         {
+            await stream.FlushAsync();
+
             var sw = new StreamWriter(stream);
 
-            for (int i = 0; i < 10; i++)
+            for (int i = 0; ; i++)
             {
                 Console.WriteLine($"sending '{i}'");
                 await sw.WriteLineAsync(i.ToString());
                 await sw.FlushAsync();
+                await stream.FlushAsync();
                 await Task.Delay(500);
             }
         }
